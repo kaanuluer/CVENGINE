@@ -4,7 +4,10 @@ import type { ScoreBlock } from "../types";
 export const ATS_TARGET = 80;
 
 const METRICS: {
-  key: keyof Pick<ScoreBlock, "parse" | "keyword" | "semantic" | "evidence" | "groundedness">;
+  key: keyof Pick<
+    ScoreBlock,
+    "parse" | "keyword" | "semantic" | "evidence" | "groundedness" | "consistency"
+  >;
   label: string;
 }[] = [
   { key: "parse", label: "Parse" },
@@ -12,6 +15,7 @@ const METRICS: {
   { key: "semantic", label: "Semantic" },
   { key: "evidence", label: "Evidence" },
   { key: "groundedness", label: "Groundedness" },
+  { key: "consistency", label: "Tutarlılık" },
 ];
 
 function tone(value: number) {
@@ -103,9 +107,9 @@ export function ScorePanel({
           {scores.passed ? "Kapılar geçti" : "Kapı açık değil"}
         </span>
       </div>
-      <div className="mt-4 grid grid-cols-5 gap-3">
+      <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
         {METRICS.map((metric) => {
-          const value = scores[metric.key];
+          const value = scores[metric.key] ?? 100;
           return (
             <div key={metric.key}>
               <div className="mb-1 flex justify-between text-[11px] text-muted">

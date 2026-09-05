@@ -159,6 +159,7 @@ class ScoreBlock(BaseModel):
     semantic: float
     evidence: float
     groundedness: float
+    consistency: float = 100.0
     overall: float
     ats: float = 0
     passed: bool

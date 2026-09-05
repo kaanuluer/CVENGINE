@@ -369,19 +369,20 @@ def _weave_owned_skills_into_highlights(
     if not surfaces or not resume.work:
         return
     changed = 0
-    for work in resume.work[:2]:
-        for idx, highlight in enumerate(work.highlights[:3]):
+    # Keep voice natural: at most one woven bullet per role, top role only.
+    for work in resume.work[:1]:
+        for idx, highlight in enumerate(work.highlights[:1]):
             lower = highlight.lower()
-            missing = [s for s in surfaces if s.lower() not in lower][:2]
+            missing = [s for s in surfaces if s.lower() not in lower][:1]
             if not missing:
                 continue
             if len(highlight) < 28:
                 continue
-            prefix = ", ".join(missing)
+            # Prefer light parenthetical weave over "X ile:" which breaks sentence voice.
             if analysis.language == "tr":
-                woven = f"{prefix} ile: {highlight}"
+                woven = f"{highlight.rstrip('.')} ({missing[0]})."
             else:
-                woven = f"{highlight.rstrip('.')} ({prefix})."
+                woven = f"{highlight.rstrip('.')} ({missing[0]})."
             if woven != highlight and len(woven) < 280:
                 work.highlights[idx] = woven
                 changed += 1
@@ -465,7 +466,11 @@ def _rewrite_summary(
             opener += f" Domain focus aligned to {domain_clause}."
     summary = " ".join(p for p in [opener, evidence] if p).strip()
     # Avoid accidental duplication from prior dense passes
-    summary = re.sub(r"(\b\S.{10,80}?\.)(?:\s+\1)+", r"\1", summary)
+    summary = re.sub(r"(\b\S.{10,90}?\.)(?:\s+\1)+", r"\1", summary)
+    # Drop evidence sentence if it mostly repeats the opener
+    if evidence and fuzz.token_set_ratio(opener, evidence) >= 86:
+        summary = opener
+
     if summary and summary != resume.basics.summary:
         diffs.append(
             DiffChange(

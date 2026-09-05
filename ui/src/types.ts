@@ -98,6 +98,7 @@ export interface ScoreBlock {
   semantic: number;
   evidence: number;
   groundedness: number;
+  consistency?: number;
   overall: number;
   ats?: number;
   passed: boolean;

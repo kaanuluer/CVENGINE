@@ -15,6 +15,7 @@ from app.schemas import (
 )
 from app.services.aihr import score_aihr
 from app.services.ats import ATS_TARGET, ats_alignment, score_ats
+from app.services.consistency import CONSISTENCY_TARGET, check_consistency
 from app.services.cover_letter import build_cover_letter
 from app.services.export_pdf import write_pdf
 from app.services.facts import extract_facts
@@ -42,7 +43,13 @@ def run_pipeline(
     analysis = analyze_jd(job_text, company=company, title=role)
     facts = extract_facts(resume)
     baseline_scores, _ = _score_resume(
-        resume, analysis, facts, template, parsed=None, enforce_ats_target=False
+        resume,
+        analysis,
+        facts,
+        template,
+        parsed=None,
+        master=resume,
+        enforce_ats_target=False,
     )
 
     tailored, diff, fact_map = tailor_resume(resume, analysis, facts)
@@ -58,11 +65,13 @@ def run_pipeline(
 
     tailored = sanitize_resume(tailored)
     grounded_score, grounded_issues = check_groundedness(resume, tailored, facts)
-    if is_blocking(grounded_issues) and used_ollama:
+    consistency_score, consistency_issues = check_consistency(resume, tailored)
+    if (is_blocking(grounded_issues) or is_blocking(consistency_issues)) and used_ollama:
         tailored, diff, fact_map = tailor_resume(resume, analysis, facts)
         used_ollama = False
         rolled_back = True
         grounded_score, grounded_issues = check_groundedness(resume, tailored, facts)
+        consistency_score, consistency_issues = check_consistency(resume, tailored)
 
     # Boost ATS toward the minimum target without inventing facts.
     scores, match = _score_resume(
@@ -71,11 +80,14 @@ def run_pipeline(
         facts,
         template,
         parsed=None,
+        master=resume,
         grounded_score=grounded_score,
         grounded_issues=grounded_issues,
+        consistency_score=consistency_score,
+        consistency_issues=consistency_issues,
     )
     for _ in range(ATS_BOOST_ROUNDS):
-        if scores.ats >= ATS_TARGET:
+        if scores.ats >= ATS_TARGET and scores.consistency >= CONSISTENCY_TARGET:
             break
         before_ats = scores.ats
         tailored, extra_diff, fact_map = amplify_for_ats(tailored, analysis, facts, fact_map)
@@ -84,18 +96,23 @@ def run_pipeline(
         diff.extend(extra_diff)
         tailored = sanitize_resume(tailored)
         grounded_score, grounded_issues = check_groundedness(resume, tailored, facts)
-        if is_blocking(grounded_issues):
+        consistency_score, consistency_issues = check_consistency(resume, tailored)
+        if is_blocking(grounded_issues) or is_blocking(consistency_issues):
             # Roll back last amplify by re-tailoring from master (deterministic).
             tailored, diff, fact_map = tailor_resume(resume, analysis, facts)
             grounded_score, grounded_issues = check_groundedness(resume, tailored, facts)
+            consistency_score, consistency_issues = check_consistency(resume, tailored)
             scores, match = _score_resume(
                 tailored,
                 analysis,
                 facts,
                 template,
                 parsed=None,
+                master=resume,
                 grounded_score=grounded_score,
                 grounded_issues=grounded_issues,
+                consistency_score=consistency_score,
+                consistency_issues=consistency_issues,
             )
             break
         scores, match = _score_resume(
@@ -104,8 +121,11 @@ def run_pipeline(
             facts,
             template,
             parsed=None,
+            master=resume,
             grounded_score=grounded_score,
             grounded_issues=grounded_issues,
+            consistency_score=consistency_score,
+            consistency_issues=consistency_issues,
         )
         if scores.ats <= before_ats + 0.05:
             break
@@ -120,8 +140,11 @@ def run_pipeline(
         facts,
         template,
         parsed=parsed,
+        master=resume,
         grounded_score=grounded_score,
         grounded_issues=grounded_issues,
+        consistency_score=consistency_score,
+        consistency_issues=consistency_issues,
     )
     cover_letter, cover_used_ollama = build_cover_letter(
         tailored,
@@ -157,13 +180,23 @@ def _score_resume(
     facts: list,
     template: TemplateName,
     parsed: Resume | None = None,
+    master: Resume | None = None,
     grounded_score: float | None = None,
     grounded_issues: list[GateIssue] | None = None,
+    consistency_score: float | None = None,
+    consistency_issues: list[GateIssue] | None = None,
     enforce_ats_target: bool = True,
 ) -> tuple[ScoreBlock, MatchResult]:
     if grounded_score is None:
         grounded_score, grounded_issues = 100.0, []
     grounded_issues = grounded_issues or []
+    if consistency_score is None:
+        if master is not None:
+            consistency_score, consistency_issues = check_consistency(master, resume)
+        else:
+            consistency_score, consistency_issues = 100.0, []
+    consistency_issues = consistency_issues or []
+
     parse_score, ats_issues = score_ats(resume, analysis, template, parsed)
     _, aihr_issues, breakdown = score_aihr(resume, analysis)
     match = match_resume(resume, analysis, facts)
@@ -172,14 +205,15 @@ def _score_resume(
     evidence = breakdown["evidence"]
     ats = ats_alignment(keyword, semantic)
     overall = round(
-        0.22 * parse_score
-        + 0.22 * keyword
-        + 0.18 * semantic
-        + 0.18 * evidence
-        + 0.20 * grounded_score,
+        0.18 * parse_score
+        + 0.18 * keyword
+        + 0.14 * semantic
+        + 0.14 * evidence
+        + 0.18 * grounded_score
+        + 0.18 * consistency_score,
         1,
     )
-    issues = [*grounded_issues, *ats_issues, *aihr_issues]
+    issues = [*grounded_issues, *consistency_issues, *ats_issues, *aihr_issues]
     if enforce_ats_target and ats < ATS_TARGET:
         issues.append(
             GateIssue(
@@ -192,6 +226,7 @@ def _score_resume(
     passed = (
         (not blocking)
         and grounded_score >= 80
+        and consistency_score >= CONSISTENCY_TARGET
         and parse_score >= 55
         and (not enforce_ats_target or ats >= ATS_TARGET)
     )
@@ -201,6 +236,7 @@ def _score_resume(
         semantic=semantic,
         evidence=evidence,
         groundedness=grounded_score,
+        consistency=consistency_score,
         overall=overall,
         ats=ats,
         passed=passed,

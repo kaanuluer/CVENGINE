@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from app.schemas import Resume
+from app.services.consistency import check_consistency
 from app.services.groundedness import check_groundedness, is_blocking
 from app.services.jd import analyze_jd
 from app.services.parser import parse_resume_text
@@ -117,6 +118,31 @@ def test_groundedness_allows_fact_preserving_paraphrase():
     assert score >= 80
 
 
+def test_consistency_rejects_extreme_rewrite():
+    resume = load_resume("resume_en.json")
+    fake = resume.model_copy(deep=True)
+    fake.work = fake.work[:1]
+    fake.work[0].highlights = [
+        "Invented entirely new narrative about quantum blockchain leadership.",
+        "Another fabricated achievement with no master CV overlap whatsoever.",
+    ]
+    fake.basics.summary = "Completely unrelated executive summary about hospitality management."
+    score, issues = check_consistency(resume, fake)
+    assert score < 75
+    assert any(
+        i.code in {"highlight_drift", "summary_drift", "employer_dropped", "consistency_low"}
+        for i in issues
+    )
+
+
+def test_consistency_passes_normal_tailor():
+    resume = load_resume("resume_en.json")
+    jd = (FIXTURES / "jd_en.txt").read_text(encoding="utf-8")
+    result = run_pipeline(resume, jd, template="classic", roundtrip=False)
+    assert result.scores.consistency >= 75
+    assert not any(i.code == "employer_dropped" for i in result.scores.issues)
+
+
 def test_pipeline_scores_and_passes_for_matching_jd():
     resume = load_resume("resume_en.json")
     jd = (FIXTURES / "jd_en.txt").read_text(encoding="utf-8")
@@ -136,6 +162,7 @@ def test_pipeline_scores_and_passes_for_matching_jd():
     assert 0 <= result.scores.ats <= 100
     assert result.scores.ats >= result.baseline_scores.ats
     assert result.scores.ats >= 80
+    assert result.scores.consistency >= 75
     assert result.scores.semantic >= result.baseline_scores.semantic
     assert result.scores.ats - result.baseline_scores.ats >= 5 or result.baseline_scores.ats >= 80
     assert "backend" in result.resume.basics.label.lower() or "engineer" in result.resume.basics.label.lower()
@@ -149,6 +176,7 @@ def test_pipeline_turkish_fixture():
     result = run_pipeline(resume, jd, template="compact", roundtrip=False)
     assert result.language == "tr"
     assert result.scores.groundedness >= 80
+    assert result.scores.consistency >= 75
     assert result.scores.ats >= 80
     assert result.scores.passed
     assert result.resume.work[0].name == "Mavi Yazılım"
