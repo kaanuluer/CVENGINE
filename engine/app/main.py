@@ -17,6 +17,8 @@ from app.schemas import (
     CoverExportRequest,
     ExportRequest,
     JobIn,
+    JobSuggestionsOut,
+    OllamaStatusOut,
     ProfileIn,
     Resume,
     RunRequest,
@@ -27,7 +29,9 @@ from app.schemas import (
 from app.services.export_cover import build_cover_docx, build_cover_pdf, write_cover_docx, write_cover_pdf
 from app.services.export_docx import build_docx, write_docx
 from app.services.export_pdf import build_pdf, write_pdf
+from app.services.facts import extract_facts
 from app.services.jd import analyze_jd
+from app.services.job_suggestions import suggest_job_types
 from app.services.match import match_resume
 from app.services.parser import parse_resume_bytes
 from app.services.pipeline import run_pipeline
@@ -67,6 +71,22 @@ def templates() -> list[dict]:
 @app.get("/api/settings")
 def get_settings():
     return store.get_settings()
+
+
+@app.get("/api/settings/ollama", response_model=OllamaStatusOut)
+def get_ollama_status(
+    verify: bool = True,
+    url: str | None = None,
+    model: str | None = None,
+):
+    """List installed models, resolve a working one, and report Turkish status labels."""
+    settings = store.get_settings()
+    base = (url or settings.ollama_url).strip() or settings.ollama_url
+    preferred = (model if model is not None else settings.ollama_model).strip()
+    from app.services.ollama import probe_ollama
+
+    status = probe_ollama(base, preferred, verify_model=verify)
+    return OllamaStatusOut(**status.as_dict())
 
 
 @app.put("/api/settings")
@@ -117,6 +137,22 @@ async def parse_profile(file: UploadFile = File(...), name: str | None = None):
         raise HTTPException(400, f"Dosya okunamadı: {exc}") from exc
     display = name or (resume.basics.name or file.filename or "Master CV")
     return store.create_profile(display, resume)
+
+
+@app.post("/api/profiles/{profile_id}/job-suggestions", response_model=JobSuggestionsOut)
+def profile_job_suggestions(profile_id: str):
+    profile = store.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(404, "Profil bulunamadı")
+    settings = store.get_settings()
+    facts = extract_facts(profile.resume)
+    return suggest_job_types(
+        profile.resume,
+        facts=facts,
+        ollama_url=settings.ollama_url,
+        ollama_model=settings.ollama_model,
+        prefer_ollama=True,
+    )
 
 
 @app.get("/api/jobs")

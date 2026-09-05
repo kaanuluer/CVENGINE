@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from app.schemas import (
+    DiffChange,
     GateIssue,
     JobAnalysis,
     MatchResult,
@@ -22,7 +23,12 @@ from app.services.facts import extract_facts
 from app.services.groundedness import check_groundedness, is_blocking
 from app.services.jd import analyze_jd
 from app.services.match import match_resume
-from app.services.ollama import ollama_available, rewrite_with_ollama
+from app.services.ollama import (
+    ollama_available,
+    resolve_working_model,
+    rewrite_summary_with_ollama,
+    rewrite_with_ollama,
+)
 from app.services.parser import parse_resume_bytes
 from app.services.sanitize import sanitize_resume
 from app.services.tailor import ATS_BOOST_ROUNDS, amplify_for_ats, tailor_resume
@@ -55,13 +61,36 @@ def run_pipeline(
     tailored, diff, fact_map = tailor_resume(resume, analysis, facts)
     used_ollama = False
     rolled_back = False
+
+    working_model: str | None = None
     if use_ollama and ollama_available(ollama_url):
-        outcome = rewrite_with_ollama(tailored, analysis, facts, ollama_url, ollama_model)
-        if outcome.status == "applied" and outcome.resume is not None:
-            tailored = outcome.resume
-            used_ollama = True
-        elif outcome.status == "rejected":
-            rolled_back = True
+        working_model, _status = resolve_working_model(ollama_url, ollama_model, verify=True)
+        if working_model:
+            outcome = rewrite_with_ollama(tailored, analysis, facts, ollama_url, working_model)
+            if outcome.status == "applied" and outcome.resume is not None:
+                tailored = outcome.resume
+                used_ollama = True
+            elif outcome.status == "rejected":
+                rolled_back = True
+            # Always try dedicated summary strengthen when Ollama is on (even if highlights skipped)
+            summary_out = rewrite_summary_with_ollama(
+                tailored, analysis, facts, ollama_url, working_model, master=resume
+            )
+            if summary_out.status == "applied" and summary_out.resume is not None:
+                before = tailored.basics.summary
+                tailored = summary_out.resume
+                used_ollama = True
+                if tailored.basics.summary != before:
+                    diff.append(
+                        DiffChange(
+                            path="basics.summary",
+                            kind="changed",
+                            before=(before or "")[:180],
+                            after=(tailored.basics.summary or "")[:180],
+                        )
+                    )
+            elif summary_out.status == "rejected":
+                rolled_back = True
 
     tailored = sanitize_resume(tailored)
     grounded_score, grounded_issues = check_groundedness(resume, tailored, facts)
@@ -130,6 +159,31 @@ def run_pipeline(
         if scores.ats <= before_ats + 0.05:
             break
 
+    # After amplify, strengthen summary again with a working model when Ollama is on.
+    if use_ollama and working_model and ollama_available(ollama_url):
+        summary_out = rewrite_summary_with_ollama(
+            tailored, analysis, facts, ollama_url, working_model, master=resume
+        )
+        if summary_out.status == "applied" and summary_out.resume is not None:
+            before = tailored.basics.summary
+            trial = summary_out.resume
+            g_score, g_issues = check_groundedness(resume, trial, facts)
+            c_score, c_issues = check_consistency(resume, trial)
+            if not is_blocking(g_issues) and not is_blocking(c_issues):
+                tailored = trial
+                used_ollama = True
+                grounded_score, grounded_issues = g_score, g_issues
+                consistency_score, consistency_issues = c_score, c_issues
+                if tailored.basics.summary != before:
+                    diff.append(
+                        DiffChange(
+                            path="basics.summary",
+                            kind="changed",
+                            before=(before or "")[:180],
+                            after=(tailored.basics.summary or "")[:180],
+                        )
+                    )
+
     parsed = None
     if roundtrip:
         parsed = _roundtrip(tailored, template, analysis.language)
@@ -153,7 +207,7 @@ def run_pipeline(
         company=company or analysis.company,
         role=role or analysis.title,
         ollama_url=ollama_url,
-        ollama_model=ollama_model,
+        ollama_model=working_model or ollama_model,
         prefer_ollama=True,
     )
 

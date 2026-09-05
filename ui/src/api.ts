@@ -1,6 +1,8 @@
 import type {
   Application,
   AppStatus,
+  JobSuggestionsResponse,
+  OllamaStatus,
   Profile,
   Resume,
   RunResponse,
@@ -33,6 +35,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<{ ok: boolean; ollama: boolean }>("/api/health"),
   settings: () => request<Settings>("/api/settings"),
+  ollamaStatus: (opts?: { verify?: boolean; url?: string; model?: string }) => {
+    const verify = opts?.verify ?? true;
+    const params = new URLSearchParams({ verify: verify ? "true" : "false" });
+    if (opts?.url) params.set("url", opts.url);
+    if (opts?.model) params.set("model", opts.model);
+    return request<OllamaStatus>(`/api/settings/ollama?${params}`);
+  },
   saveSettings: (body: Partial<Settings>) =>
     request<Settings>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
   profiles: () => request<Profile[]>("/api/profiles"),
@@ -51,6 +60,10 @@ export const api = {
     if (name) data.append("name", name);
     return request<Profile>("/api/profiles/parse", { method: "POST", body: data });
   },
+  jobSuggestions: (profileId: string) =>
+    request<JobSuggestionsResponse>(`/api/profiles/${profileId}/job-suggestions`, {
+      method: "POST",
+    }),
   applications: () => request<Application[]>("/api/applications"),
   application: (id: string) => request<Application>(`/api/applications/${id}`),
   patchApplication: (id: string, body: { status?: AppStatus; notes?: string }) =>

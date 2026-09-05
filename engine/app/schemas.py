@@ -317,3 +317,26 @@ class AnalyzeRequest(BaseModel):
     profile_id: str | None = None
     resume: Resume | None = None
     job_text: str
+
+
+class JobSuggestion(BaseModel):
+    title: str
+    rationale: str = ""
+
+
+class JobSuggestionsOut(BaseModel):
+    suggestions: list[JobSuggestion] = Field(default_factory=list)
+    source: Literal["ollama", "heuristic"] = "heuristic"
+    ollama_available: bool = False
+    model: str = ""
+    message: str = ""
+
+
+class OllamaStatusOut(BaseModel):
+    available: bool = False
+    models: list[str] = Field(default_factory=list)
+    selected: str = ""
+    healthy: bool = False
+    error: str = ""
+    status: Literal["connected", "model_ok", "model_missing", "offline"] = "offline"
+    status_label_tr: str = "Ollama kapalı"

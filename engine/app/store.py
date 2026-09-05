@@ -27,7 +27,7 @@ from app.schemas import (
 )
 from app.services.ats import ats_alignment
 from app.services.facts import extract_facts
-from app.services.ollama import ollama_available
+from app.services.ollama import probe_ollama, resolve_working_model
 from app.services.sanitize import sanitize_resume
 
 
@@ -369,26 +369,61 @@ def get_settings() -> SettingsOut:
     try:
         values = {row.key: row.value for row in session.query(SettingRow).all()}
         url = values.get("ollama_url", "http://127.0.0.1:11434")
+        preferred = values.get("ollama_model", "llama3.1")
+        # Soft resolve without ping on every settings read (fast)
+        model, status = resolve_working_model(url, preferred, verify=False)
         return SettingsOut(
             language=values.get("language", "tr"),  # type: ignore[arg-type]
             ollama_url=url,
-            ollama_model=values.get("ollama_model", "llama3.1"),
+            ollama_model=model or preferred,
             default_template=values.get("default_template", "classic"),  # type: ignore[arg-type]
-            ollama_available=ollama_available(url),
+            ollama_available=status.available and bool(model),
         )
     finally:
         session.close()
 
 
+def get_ollama_status(*, verify: bool = True) -> dict:
+    settings = get_settings()
+    status = probe_ollama(settings.ollama_url, settings.ollama_model, verify_model=verify)
+    return status.as_dict()
+
+
 def update_settings(patch: dict[str, str]) -> SettingsOut:
     session = SessionLocal()
     try:
+        url = None
+        preferred = None
         for key, value in patch.items():
             row = session.get(SettingRow, key)
             if row is None:
                 session.add(SettingRow(key=key, value=value))
             else:
                 row.value = value
+            if key == "ollama_url":
+                url = value
+            if key == "ollama_model":
+                preferred = value
+        session.flush()
+        values = {row.key: row.value for row in session.query(SettingRow).all()}
+        url = url or values.get("ollama_url", "http://127.0.0.1:11434")
+        preferred = preferred if preferred is not None else values.get("ollama_model", "llama3.1")
+        # On save: verify and auto-pick a working installed model
+        model, status = resolve_working_model(url, preferred, verify=True)
+        if model and model != preferred:
+            row = session.get(SettingRow, "ollama_model")
+            if row is None:
+                session.add(SettingRow(key="ollama_model", value=model))
+            else:
+                row.value = model
+        elif not model and status.models:
+            # Prefer listing first available even if ping failed (avoid dead configured name)
+            fallback = status.models[0]
+            row = session.get(SettingRow, "ollama_model")
+            if row is None:
+                session.add(SettingRow(key="ollama_model", value=fallback))
+            else:
+                row.value = fallback
         session.commit()
     finally:
         session.close()

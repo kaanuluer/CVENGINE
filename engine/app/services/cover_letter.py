@@ -9,7 +9,7 @@ from rapidfuzz import fuzz
 from app.schemas import JobAnalysis, MatchResult, Resume, ResumeLanguage
 from app.services.language import language_capitalize
 from app.services.match import highlight_entries
-from app.services.ollama import ollama_available
+from app.services.ollama import ollama_available, resolve_working_model
 
 SLOP = {
     "leverage", "passionate", "delve", "synergy", "cutting-edge",
@@ -46,20 +46,22 @@ def build_cover_letter(
     draft = draft.strip() + "\n"
 
     if prefer_ollama and ollama_url and ollama_available(ollama_url):
-        polished = generate_cover_letter_with_ollama(
-            draft,
-            resume,
-            analysis,
-            company=company,
-            role=role,
-            evidence=evidence,
-            skills=skills,
-            years=years,
-            base_url=ollama_url,
-            model=ollama_model,
-        )
-        if polished:
-            return polished, True
+        model, _status = resolve_working_model(ollama_url, ollama_model, verify=False)
+        if model:
+            polished = generate_cover_letter_with_ollama(
+                draft,
+                resume,
+                analysis,
+                company=company,
+                role=role,
+                evidence=evidence,
+                skills=skills,
+                years=years,
+                base_url=ollama_url,
+                model=model,
+            )
+            if polished:
+                return polished, True
     return draft, False
 
 

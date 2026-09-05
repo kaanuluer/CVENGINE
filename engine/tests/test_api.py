@@ -25,6 +25,32 @@ def test_health(client: TestClient):
     assert response.json()["ok"] is True
 
 
+def test_ollama_status_endpoint(client: TestClient):
+    response = client.get("/api/settings/ollama?verify=false")
+    assert response.status_code == 200
+    body = response.json()
+    assert "available" in body
+    assert "models" in body
+    assert "status_label_tr" in body
+    assert body["status"] in {"connected", "model_ok", "model_missing", "offline"}
+
+
+def test_job_suggestions_endpoint(client: TestClient):
+    resume_path = Path(__file__).parent / "fixtures" / "resume_en.json"
+    parsed = client.post(
+        "/api/profiles/parse",
+        files={"file": ("resume.json", resume_path.read_bytes(), "application/json")},
+    )
+    assert parsed.status_code == 200
+    profile_id = parsed.json()["id"]
+    res = client.post(f"/api/profiles/{profile_id}/job-suggestions")
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["suggestions"]) >= 3
+    assert body["source"] in {"ollama", "heuristic"}
+    assert all(s.get("title") and s.get("rationale") for s in body["suggestions"])
+
+
 def test_parse_and_run(client: TestClient):
     resume_path = Path(__file__).parent / "fixtures" / "resume_en.json"
     jd = (Path(__file__).parent / "fixtures" / "jd_en.txt").read_text(encoding="utf-8")

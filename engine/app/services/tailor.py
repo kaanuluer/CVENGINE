@@ -446,24 +446,12 @@ def _rewrite_summary(
     query = " ".join(
         [analysis.title, *analysis.required_skills, *analysis.preferred_skills, *analysis.keywords[:10]]
     )
-    evidence = extractive_summary(candidates, query, limit=5 if dense else 3)
+    evidence_limit = 4 if dense else 3
+    evidence_parts = _ranked_evidence(candidates, query, limit=evidence_limit)
+    evidence = " ".join(evidence_parts)
 
     role = analysis.title or resume.basics.label or ("Professional" if analysis.language == "en" else "Profesyonel")
-    skill_clause = ", ".join(owned_required)
-    domain_clause = ", ".join(domain_bits)
-    if analysis.language == "tr":
-        opener = f"{role}."
-        if skill_clause:
-            opener += f" Doğrudan ilgili yetkinlikler: {skill_clause}."
-        if domain_clause:
-            opener += f" İlanla örtüşen odak: {domain_clause}."
-    else:
-        if skill_clause:
-            opener = f"{role} with proven depth in {skill_clause}."
-        else:
-            opener = f"{role} with relevant, verifiable delivery against the posting."
-        if domain_clause:
-            opener += f" Domain focus aligned to {domain_clause}."
+    opener = _prose_opener(role, owned_required[:4], domain_bits[:2], analysis.language)
     summary = " ".join(p for p in [opener, evidence] if p).strip()
     # Avoid accidental duplication from prior dense passes
     summary = re.sub(r"(\b\S.{10,90}?\.)(?:\s+\1)+", r"\1", summary)
@@ -482,6 +470,60 @@ def _rewrite_summary(
         )
         resume.basics.summary = summary
         fact_map["basics.summary"] = ["summary"] + owned_required + domain_bits
+
+
+def _join_phrase(items: list[str], language: str) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if language == "tr":
+        return f"{', '.join(items[:-1])} ve {items[-1]}"
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
+
+
+def _prose_opener(role: str, skills: list[str], domains: list[str], language: str) -> str:
+    """Role-led paragraph opener — prose, not a skills inventory list."""
+    skill_phrase = _join_phrase(skills, language)
+    domain_phrase = _join_phrase(domains, language)
+    if language == "tr":
+        if skill_phrase:
+            opener = f"{role} olarak {skill_phrase} alanında doğrulanabilir deneyime sahip."
+        else:
+            opener = f"{role} olarak ilanla örtüşen teslimat deneyimine sahip."
+        if domain_phrase:
+            opener += f" Çalışmaları {domain_phrase} çerçevesinde şekillenir."
+        return opener
+    if skill_phrase:
+        opener = f"{role} with hands-on experience across {skill_phrase}."
+    else:
+        opener = f"{role} with verifiable delivery against the posting."
+    if domain_phrase:
+        opener += f" Recent work spans {domain_phrase}."
+    return opener
+
+
+def _ranked_evidence(candidates: list[str], query: str, limit: int = 3) -> list[str]:
+    """Pick JD-relevant sentences and keep them as readable prose units."""
+    cleaned = [c.strip() for c in candidates if c and len(c.strip()) > 24]
+    if not cleaned:
+        return []
+    # Prefer extractive_summary ordering, then dedupe near-duplicates.
+    blob = extractive_summary(cleaned, query, limit=limit + 2)
+    parts = _split_keep(blob) if blob else []
+    if not parts and blob:
+        parts = [blob]
+    out: list[str] = []
+    for part in parts:
+        text = part.rstrip(".")
+        if not text:
+            continue
+        if any(fuzz.token_set_ratio(text, prev) >= 88 for prev in out):
+            continue
+        out.append(text + ".")
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _split_keep(text: str) -> list[str]:

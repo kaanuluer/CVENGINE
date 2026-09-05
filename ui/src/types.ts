@@ -221,6 +221,29 @@ export interface Settings {
   ollama_available: boolean;
 }
 
+export interface OllamaStatus {
+  available: boolean;
+  models: string[];
+  selected: string;
+  healthy: boolean;
+  error: string;
+  status: "connected" | "model_ok" | "model_missing" | "offline";
+  status_label_tr: string;
+}
+
+export interface JobSuggestion {
+  title: string;
+  rationale: string;
+}
+
+export interface JobSuggestionsResponse {
+  suggestions: JobSuggestion[];
+  source: "ollama" | "heuristic";
+  ollama_available: boolean;
+  model?: string;
+  message?: string;
+}
+
 export const STATUS_LABEL: Record<AppStatus, string> = {
   draft: "Taslak",
   applied: "Başvuruldu",
