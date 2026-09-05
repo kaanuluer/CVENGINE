@@ -16,6 +16,7 @@ SENIORITY_TOKENS = {
 }
 
 HIGHLIGHT_CAP = 6
+ATS_BOOST_ROUNDS = 4
 
 
 def tailor_resume(resume: Resume, analysis: JobAnalysis, facts: list[Fact] | None = None) -> tuple[Resume, list[DiffChange], dict[str, list[str]]]:
@@ -32,9 +33,29 @@ def tailor_resume(resume: Resume, analysis: JobAnalysis, facts: list[Fact] | Non
     _align_titles(tailored, analysis, diffs)
     _align_label(tailored, analysis, diffs)
     _rewrite_skills(tailored, analysis, facts, diffs, fact_map)
-    _rewrite_summary(tailored, analysis, facts, diffs, fact_map)
+    _rewrite_summary(tailored, analysis, facts, diffs, fact_map, dense=True)
     _map_work_facts(tailored, facts, fact_map)
 
+    return tailored, diffs, fact_map
+
+
+def amplify_for_ats(
+    resume: Resume,
+    analysis: JobAnalysis,
+    facts: list[Fact],
+    fact_map: dict[str, list[str]],
+) -> tuple[Resume, list[DiffChange], dict[str, list[str]]]:
+    """Grounded second-pass to push ATS keyword/semantic alignment toward the target."""
+    tailored = resume.model_copy(deep=True)
+    diffs: list[DiffChange] = []
+    match = match_resume(tailored, analysis, facts)
+    _rerank_highlights(tailored, match.highlight_scores, diffs)
+    _mirror_surface_forms(tailored, analysis, facts, diffs)
+    _align_label(tailored, analysis, diffs)
+    _rewrite_skills(tailored, analysis, facts, diffs, fact_map, aggressive=True)
+    _weave_owned_skills_into_highlights(tailored, analysis, facts, diffs)
+    _rewrite_summary(tailored, analysis, facts, diffs, fact_map, dense=True)
+    _map_work_facts(tailored, facts, fact_map)
     return tailored, diffs, fact_map
 
 
@@ -249,6 +270,7 @@ def _rewrite_skills(
     facts: list[Fact],
     diffs: list[DiffChange],
     fact_map: dict[str, list[str]],
+    aggressive: bool = False,
 ) -> None:
     owned = {t.lower() for t in tools_set(facts)}
     corpus = _blob(resume)
@@ -276,15 +298,22 @@ def _rewrite_skills(
             if kw not in selected and (kw.lower() in owned or skill_owned(kw, owned, corpus)):
                 leftover.append(kw)
 
+    core_cap = 18 if aggressive else 14
+    extra_cap = 18 if aggressive else 16
     before = [kw for g in resume.skills for kw in g.keywords]
     groups: list[SkillItem] = []
     if selected:
-        groups.append(SkillItem(name="Core" if analysis.language == "en" else "Temel", keywords=selected[:14]))
+        groups.append(
+            SkillItem(
+                name="Core" if analysis.language == "en" else "Temel",
+                keywords=selected[:core_cap],
+            )
+        )
     if leftover:
         groups.append(
             SkillItem(
                 name="Additional" if analysis.language == "en" else "Ek",
-                keywords=leftover[:16],
+                keywords=leftover[:extra_cap],
             )
         )
     if groups:
@@ -301,20 +330,70 @@ def _rewrite_skills(
             )
 
 
+def _weave_owned_skills_into_highlights(
+    resume: Resume,
+    analysis: JobAnalysis,
+    facts: list[Fact],
+    diffs: list[DiffChange],
+) -> None:
+    """Prefix top bullets with owned JD skill surfaces when missing (no new claims)."""
+    owned = {t.lower() for t in tools_set(facts)}
+    corpus = _blob(resume)
+    surfaces = [
+        analysis.surface_forms.get(skill) or surface_for(skill, analysis.language)
+        for skill in analysis.required_skills + analysis.preferred_skills
+        if skill_owned(skill, owned, corpus)
+    ]
+    if not surfaces or not resume.work:
+        return
+    changed = 0
+    for work in resume.work[:2]:
+        for idx, highlight in enumerate(work.highlights[:3]):
+            lower = highlight.lower()
+            missing = [s for s in surfaces if s.lower() not in lower][:2]
+            if not missing:
+                continue
+            # Only weave if the bullet already discusses delivery (keep grounded).
+            if len(highlight) < 28:
+                continue
+            prefix = ", ".join(missing)
+            if analysis.language == "tr":
+                woven = f"{prefix} ile: {highlight}"
+            else:
+                woven = f"{highlight.rstrip('.')} ({prefix})."
+            if woven != highlight and len(woven) < 280:
+                work.highlights[idx] = woven
+                changed += 1
+    if changed:
+        diffs.append(
+            DiffChange(
+                path="work.highlights",
+                kind="changed",
+                before="İlan yetkinlikleri vurgulanmamış maddeler",
+                after=f"{changed} maddeye sahip olunan ilan yetkinlikleri eklendi",
+            )
+        )
+
+
 def _rewrite_summary(
     resume: Resume,
     analysis: JobAnalysis,
     facts: list[Fact],
     diffs: list[DiffChange],
     fact_map: dict[str, list[str]],
+    dense: bool = False,
 ) -> None:
     owned = {t.lower() for t in tools_set(facts)}
     corpus = _blob(resume)
+    skill_limit = 10 if dense else 6
     owned_required = [
         analysis.surface_forms.get(skill) or surface_for(skill, analysis.language)
-        for skill in analysis.required_skills
+        for skill in analysis.required_skills + analysis.preferred_skills
         if skill_owned(skill, owned, corpus)
-    ][:6]
+    ][:skill_limit]
+    # Dedupe while preserving order
+    seen: set[str] = set()
+    owned_required = [s for s in owned_required if not (s.lower() in seen or seen.add(s.lower()))]
 
     candidates: list[str] = []
     if resume.basics.summary:
@@ -324,7 +403,7 @@ def _rewrite_summary(
             candidates.append(work.summary)
         candidates.extend(work.highlights[:3])
     query = " ".join([analysis.title, *analysis.required_skills, *analysis.keywords[:8]])
-    evidence = extractive_summary(candidates, query, limit=3)
+    evidence = extractive_summary(candidates, query, limit=4 if dense else 3)
 
     role = analysis.title or resume.basics.label or ("Professional" if analysis.language == "en" else "Profesyonel")
     skill_clause = ", ".join(owned_required)

@@ -1,6 +1,12 @@
 import type { ScoreBlock } from "../types";
 
-const METRICS: { key: keyof Pick<ScoreBlock, "parse" | "keyword" | "semantic" | "evidence" | "groundedness">; label: string }[] = [
+/** Minimum ATS alignment target for generated (tailored) CVs. */
+export const ATS_TARGET = 80;
+
+const METRICS: {
+  key: keyof Pick<ScoreBlock, "parse" | "keyword" | "semantic" | "evidence" | "groundedness">;
+  label: string;
+}[] = [
   { key: "parse", label: "Parse" },
   { key: "keyword", label: "Keyword" },
   { key: "semantic", label: "Semantic" },
@@ -9,13 +15,13 @@ const METRICS: { key: keyof Pick<ScoreBlock, "parse" | "keyword" | "semantic" | 
 ];
 
 function tone(value: number) {
-  if (value >= 80) return "text-success";
+  if (value >= ATS_TARGET) return "text-success";
   if (value >= 60) return "text-warning";
   return "text-danger";
 }
 
 function bar(value: number) {
-  return value >= 80 ? "bg-success" : value >= 60 ? "bg-warning" : "bg-danger";
+  return value >= ATS_TARGET ? "bg-success" : value >= 60 ? "bg-warning" : "bg-danger";
 }
 
 export function atsOf(scores: ScoreBlock) {
@@ -33,10 +39,14 @@ export function ScorePanel({
   const tailoredAts = atsOf(scores);
   const masterAts = baseline ? atsOf(baseline) : null;
   const delta = masterAts != null ? Math.round(tailoredAts - masterAts) : null;
+  const meetsTarget = tailoredAts >= ATS_TARGET;
 
   return (
     <section className="rounded-card border border-line bg-white p-5 shadow-card">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted">ATS uyumu</p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted">ATS uyumu</p>
+        <p className="text-[11px] text-muted">Hedef ≥ {ATS_TARGET}</p>
+      </div>
       <div className={`mt-3 grid gap-4 ${baseline ? "grid-cols-2" : "grid-cols-1"}`}>
         {baseline && (
           <div>
@@ -64,6 +74,13 @@ export function ScorePanel({
                 {delta > 0 ? `+${delta}` : delta}
               </span>
             )}
+            <span
+              className={`mb-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                meetsTarget ? "bg-green-50 text-success" : "bg-amber-50 text-warning"
+              }`}
+            >
+              {meetsTarget ? "Hedef karşılandı" : `Hedef ${ATS_TARGET}`}
+            </span>
           </div>
           <p className="mt-1 text-[11px] text-muted">
             Keyword {Math.round(scores.keyword)} · Semantic {Math.round(scores.semantic)}

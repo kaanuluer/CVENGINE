@@ -31,6 +31,10 @@ HEADINGS = {
 }
 
 
+# Minimum ATS alignment target for tailored (generated) resumes.
+ATS_TARGET = 80.0
+
+
 def ats_alignment(keyword: float, semantic: float) -> float:
     """JD fit for ATS: keyword coverage dominates; semantic is supporting signal."""
     return round(0.62 * keyword + 0.38 * semantic, 1)

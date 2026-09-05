@@ -14,7 +14,7 @@ from app.schemas import (
     TemplateName,
 )
 from app.services.aihr import score_aihr
-from app.services.ats import ats_alignment, score_ats
+from app.services.ats import ATS_TARGET, ats_alignment, score_ats
 from app.services.cover_letter import build_cover_letter
 from app.services.export_pdf import write_pdf
 from app.services.facts import extract_facts
@@ -24,7 +24,7 @@ from app.services.match import match_resume
 from app.services.ollama import ollama_available, rewrite_with_ollama
 from app.services.parser import parse_resume_bytes
 from app.services.sanitize import sanitize_resume
-from app.services.tailor import tailor_resume
+from app.services.tailor import ATS_BOOST_ROUNDS, amplify_for_ats, tailor_resume
 
 
 def run_pipeline(
@@ -41,7 +41,9 @@ def run_pipeline(
     resume = sanitize_resume(resume)
     analysis = analyze_jd(job_text, company=company, title=role)
     facts = extract_facts(resume)
-    baseline_scores, _ = _score_resume(resume, analysis, facts, template, parsed=None)
+    baseline_scores, _ = _score_resume(
+        resume, analysis, facts, template, parsed=None, enforce_ats_target=False
+    )
 
     tailored, diff, fact_map = tailor_resume(resume, analysis, facts)
     used_ollama = False
@@ -61,6 +63,52 @@ def run_pipeline(
         used_ollama = False
         rolled_back = True
         grounded_score, grounded_issues = check_groundedness(resume, tailored, facts)
+
+    # Boost ATS toward the minimum target without inventing facts.
+    scores, match = _score_resume(
+        tailored,
+        analysis,
+        facts,
+        template,
+        parsed=None,
+        grounded_score=grounded_score,
+        grounded_issues=grounded_issues,
+    )
+    for _ in range(ATS_BOOST_ROUNDS):
+        if scores.ats >= ATS_TARGET:
+            break
+        before_ats = scores.ats
+        tailored, extra_diff, fact_map = amplify_for_ats(tailored, analysis, facts, fact_map)
+        if not extra_diff:
+            break
+        diff.extend(extra_diff)
+        tailored = sanitize_resume(tailored)
+        grounded_score, grounded_issues = check_groundedness(resume, tailored, facts)
+        if is_blocking(grounded_issues):
+            # Roll back last amplify by re-tailoring from master (deterministic).
+            tailored, diff, fact_map = tailor_resume(resume, analysis, facts)
+            grounded_score, grounded_issues = check_groundedness(resume, tailored, facts)
+            scores, match = _score_resume(
+                tailored,
+                analysis,
+                facts,
+                template,
+                parsed=None,
+                grounded_score=grounded_score,
+                grounded_issues=grounded_issues,
+            )
+            break
+        scores, match = _score_resume(
+            tailored,
+            analysis,
+            facts,
+            template,
+            parsed=None,
+            grounded_score=grounded_score,
+            grounded_issues=grounded_issues,
+        )
+        if scores.ats <= before_ats + 0.05:
+            break
 
     parsed = None
     if roundtrip:
@@ -111,6 +159,7 @@ def _score_resume(
     parsed: Resume | None = None,
     grounded_score: float | None = None,
     grounded_issues: list[GateIssue] | None = None,
+    enforce_ats_target: bool = True,
 ) -> tuple[ScoreBlock, MatchResult]:
     if grounded_score is None:
         grounded_score, grounded_issues = 100.0, []
@@ -131,8 +180,21 @@ def _score_resume(
         1,
     )
     issues = [*grounded_issues, *ats_issues, *aihr_issues]
+    if enforce_ats_target and ats < ATS_TARGET:
+        issues.append(
+            GateIssue(
+                code="ats_below_target",
+                message=f"ATS uyumu {ats:.0f} — hedef en az {ATS_TARGET:.0f}",
+                severity="block",
+            )
+        )
     blocking = any(i.severity == "block" for i in issues)
-    passed = (not blocking) and grounded_score >= 80 and parse_score >= 55
+    passed = (
+        (not blocking)
+        and grounded_score >= 80
+        and parse_score >= 55
+        and (not enforce_ats_target or ats >= ATS_TARGET)
+    )
     scores = ScoreBlock(
         parse=parse_score,
         keyword=keyword,

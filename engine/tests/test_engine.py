@@ -135,10 +135,12 @@ def test_pipeline_scores_and_passes_for_matching_jd():
     assert 0 <= result.baseline_scores.ats <= 100
     assert 0 <= result.scores.ats <= 100
     assert result.scores.ats >= result.baseline_scores.ats
-    assert result.scores.ats >= 78
+    assert result.scores.ats >= 80
     assert result.scores.semantic >= result.baseline_scores.semantic
-    assert result.scores.ats - result.baseline_scores.ats >= 5 or result.baseline_scores.ats >= 78
+    assert result.scores.ats - result.baseline_scores.ats >= 5 or result.baseline_scores.ats >= 80
     assert "backend" in result.resume.basics.label.lower() or "engineer" in result.resume.basics.label.lower()
+    assert result.scores.passed
+    assert not any(i.code == "ats_below_target" for i in result.scores.issues)
 
 
 def test_pipeline_turkish_fixture():
@@ -147,6 +149,8 @@ def test_pipeline_turkish_fixture():
     result = run_pipeline(resume, jd, template="compact", roundtrip=False)
     assert result.language == "tr"
     assert result.scores.groundedness >= 80
+    assert result.scores.ats >= 80
+    assert result.scores.passed
     assert result.resume.work[0].name == "Mavi Yazılım"
     assert "Sayın Yetkili" in result.cover_letter
     assert "Ece Kaya" in result.cover_letter
