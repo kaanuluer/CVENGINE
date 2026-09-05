@@ -296,13 +296,19 @@ def retarget(application_id: str, template: TemplateName = "classic", use_ollama
 
 @app.post("/api/export")
 def export_resume(body: ExportRequest):
+    filename = f"resume.{body.format}"
     if body.format == "pdf":
         data = build_pdf(body.resume, body.template, body.language)
-        return Response(content=data, media_type="application/pdf")
+        return Response(
+            content=data,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     data = build_docx(body.resume, body.template, body.language)
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -310,11 +316,17 @@ def export_resume(body: ExportRequest):
 def export_cover(body: CoverExportRequest):
     if not body.text.strip():
         raise HTTPException(400, "Ön yazı boş")
+    filename = f"cover-letter.{body.format}"
     if body.format == "pdf":
-        return Response(content=build_cover_pdf(body.text), media_type="application/pdf")
+        return Response(
+            content=build_cover_pdf(body.text),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     return Response(
         content=build_cover_docx(body.text),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

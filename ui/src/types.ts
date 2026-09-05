@@ -182,6 +182,7 @@ export interface TailoredOut {
   cover_letter?: string;
   cover_pdf_path?: string | null;
   cover_docx_path?: string | null;
+  cover_used_ollama?: boolean;
   language?: ResumeLanguage;
   used_ollama: boolean;
   created_at: string;

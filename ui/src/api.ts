@@ -82,7 +82,12 @@ export const api = {
       body: JSON.stringify({ resume, template, format, language }),
     });
     if (!response.ok) throw new Error("Export başarısız");
-    return await response.blob();
+    const buffer = await response.arrayBuffer();
+    const type =
+      format === "pdf"
+        ? "application/pdf"
+        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    return new Blob([buffer], { type });
   },
   exportCoverBlob: async (text: string, format: "pdf" | "docx") => {
     const response = await fetch("/api/export/cover", {
@@ -91,6 +96,11 @@ export const api = {
       body: JSON.stringify({ text, format }),
     });
     if (!response.ok) throw new Error("Ön yazı export başarısız");
-    return await response.blob();
+    const buffer = await response.arrayBuffer();
+    const type =
+      format === "pdf"
+        ? "application/pdf"
+        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    return new Blob([buffer], { type });
   },
 };

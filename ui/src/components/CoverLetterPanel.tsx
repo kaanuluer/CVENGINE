@@ -4,6 +4,7 @@ type Props = {
   onDownload: (format: "pdf" | "docx") => void;
   usedOllama?: boolean;
   ollamaAvailable?: boolean;
+  busy?: boolean;
 };
 
 export function CoverLetterPanel({
@@ -12,6 +13,7 @@ export function CoverLetterPanel({
   onDownload,
   usedOllama = false,
   ollamaAvailable = false,
+  busy = false,
 }: Props) {
   return (
     <div className="rounded-card border border-line bg-white p-5 shadow-card">
@@ -29,7 +31,7 @@ export function CoverLetterPanel({
         <div className="flex gap-2">
           <button
             type="button"
-            disabled={!value.trim()}
+            disabled={!value.trim() || busy}
             onClick={() => onDownload("pdf")}
             className="rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40"
           >
@@ -37,7 +39,7 @@ export function CoverLetterPanel({
           </button>
           <button
             type="button"
-            disabled={!value.trim()}
+            disabled={!value.trim() || busy}
             onClick={() => onDownload("docx")}
             className="rounded-lg bg-ink px-3 py-2 text-sm text-white disabled:opacity-40"
           >

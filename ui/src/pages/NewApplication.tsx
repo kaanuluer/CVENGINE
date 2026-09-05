@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { CoverLetterPanel } from "../components/CoverLetterPanel";
+import { ExportOverlay, useExportDownload } from "../components/ExportDownload";
 import { ResumePreview } from "../components/ResumePreview";
 import { ScorePanel } from "../components/ScorePanel";
 import type { Profile, RunResponse, TemplateName } from "../types";
@@ -19,6 +20,7 @@ export function NewApplication() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<RunResponse | null>(null);
   const [letter, setLetter] = useState("");
+  const { exportState, runExport } = useExportDownload();
 
   useEffect(() => {
     void (async () => {
@@ -58,14 +60,22 @@ export function NewApplication() {
 
   async function download(format: "pdf" | "docx") {
     if (!tailor) return;
-    const blob = await api.exportBlob(tailor.resume, template, format, tailor.language);
-    triggerDownload(blob, `resume-${template}.${format}`);
+    await runExport({
+      format,
+      label: format === "pdf" ? "PDF" : "DOCX",
+      filename: `resume-${template}.${format}`,
+      fetchBlob: () => api.exportBlob(tailor.resume, template, format, tailor.language),
+    });
   }
 
   async function downloadCover(format: "pdf" | "docx") {
     if (!letter.trim()) return;
-    const blob = await api.exportCoverBlob(letter, format);
-    triggerDownload(blob, `cover-letter.${format}`);
+    await runExport({
+      format,
+      label: format === "pdf" ? "Ön yazı PDF" : "Ön yazı DOCX",
+      filename: `cover-letter.${format}`,
+      fetchBlob: () => api.exportCoverBlob(letter, format),
+    });
   }
 
   const missing = useMemo(
@@ -75,6 +85,7 @@ export function NewApplication() {
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
+      <ExportOverlay state={exportState} />
       <h1 className="text-[30px] font-semibold tracking-tight">Yeni başvuru</h1>
       <p className="mt-1 text-sm text-muted">
         İlanı yapıştırın. Motor uydurma yapmadan, mevcut kanıtlardan ATS uyumlu bir CV ve ön yazı üretir.
@@ -195,10 +206,20 @@ export function NewApplication() {
                   </p>
                 )}
                 <div className="mt-4 flex gap-2">
-                  <button type="button" onClick={() => void download("pdf")} className="rounded-lg border border-line px-3 py-2 text-sm">
+                  <button
+                    type="button"
+                    disabled={!!exportState}
+                    onClick={() => void download("pdf")}
+                    className="rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40"
+                  >
                     PDF indir
                   </button>
-                  <button type="button" onClick={() => void download("docx")} className="rounded-lg bg-ink px-3 py-2 text-sm text-white">
+                  <button
+                    type="button"
+                    disabled={!!exportState}
+                    onClick={() => void download("docx")}
+                    className="rounded-lg bg-ink px-3 py-2 text-sm text-white disabled:opacity-40"
+                  >
                     DOCX indir (ATS önerilen)
                   </button>
                 </div>
@@ -212,6 +233,7 @@ export function NewApplication() {
                 onDownload={(format) => void downloadCover(format)}
                 usedOllama={!!tailor.cover_used_ollama}
                 ollamaAvailable={ollama}
+                busy={!!exportState}
               />
             </>
           ) : (
@@ -223,13 +245,4 @@ export function NewApplication() {
       </div>
     </div>
   );
-}
-
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }

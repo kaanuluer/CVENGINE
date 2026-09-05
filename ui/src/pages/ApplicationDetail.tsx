@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { CoverLetterPanel } from "../components/CoverLetterPanel";
+import { ExportOverlay, useExportDownload } from "../components/ExportDownload";
 import { ResumePreview } from "../components/ResumePreview";
 import { ScorePanel } from "../components/ScorePanel";
 import { StatusBadge } from "../components/StatusBadge";
@@ -17,6 +18,7 @@ export function ApplicationDetail() {
   const [busy, setBusy] = useState(false);
   const [letter, setLetter] = useState("");
   const [ollama, setOllama] = useState(false);
+  const { exportState, runExport } = useExportDownload();
 
   async function load() {
     if (!id) return;
@@ -55,18 +57,27 @@ export function ApplicationDetail() {
 
   async function download(format: "pdf" | "docx") {
     if (!latest) return;
-    const blob = await api.exportBlob(latest.resume, template, format, latest.language || "en");
-    triggerDownload(blob, `${companyName || "resume"}-${template}.${format}`);
+    await runExport({
+      format,
+      label: format === "pdf" ? "PDF" : "DOCX",
+      filename: `${companyName || "resume"}-${template}.${format}`,
+      fetchBlob: () => api.exportBlob(latest.resume, template, format, latest.language || "en"),
+    });
   }
 
   async function downloadCover(format: "pdf" | "docx") {
     if (!letter.trim()) return;
-    const blob = await api.exportCoverBlob(letter, format);
-    triggerDownload(blob, `${companyName || "cover"}-letter.${format}`);
+    await runExport({
+      format,
+      label: format === "pdf" ? "Ön yazı PDF" : "Ön yazı DOCX",
+      filename: `${companyName || "cover"}-letter.${format}`,
+      fetchBlob: () => api.exportCoverBlob(letter, format),
+    });
   }
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
+      <ExportOverlay state={exportState} />
       <Link to="/" className="text-sm text-muted hover:text-ink">
         ← Dashboard
       </Link>
@@ -128,10 +139,20 @@ export function ApplicationDetail() {
         </button>
         {latest && (
           <>
-            <button type="button" onClick={() => void download("pdf")} className="rounded-lg border border-line px-3 py-2 text-sm">
+            <button
+              type="button"
+              disabled={!!exportState}
+              onClick={() => void download("pdf")}
+              className="rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40"
+            >
               PDF
             </button>
-            <button type="button" onClick={() => void download("docx")} className="rounded-lg border border-line px-3 py-2 text-sm">
+            <button
+              type="button"
+              disabled={!!exportState}
+              onClick={() => void download("docx")}
+              className="rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40"
+            >
               DOCX
             </button>
           </>
@@ -159,7 +180,9 @@ export function ApplicationDetail() {
               value={letter}
               onChange={setLetter}
               onDownload={(format) => void downloadCover(format)}
+              usedOllama={!!latest.cover_used_ollama}
               ollamaAvailable={ollama}
+              busy={!!exportState}
             />
           </div>
           <div className="lg:col-span-7 overflow-auto rounded-card border border-line bg-canvas p-6">
@@ -169,13 +192,4 @@ export function ApplicationDetail() {
       )}
     </div>
   );
-}
-
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
