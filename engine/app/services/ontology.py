@@ -68,13 +68,30 @@ def surface_for(canonical: str, language: str, jd_surface: str | None = None) ->
     return canonical
 
 
+# Short / common English words that collide with skill aliases (e.g. "rest and recharge").
+AMBIGUOUS_SKILL_TERMS = frozenset({"rest", "go", "r", "c", "java"})
+
+
 def find_skills_in_text(text: str) -> list[tuple[str, str]]:
     """Return list of (canonical, surface_form) found in text."""
     found: list[tuple[str, str]] = []
     seen: set[str] = set()
     for term in all_skill_terms():
-        pattern = re.compile(rf"(?<![A-Za-z0-9+.#]){re.escape(term)}(?![A-Za-z0-9+.#])", re.I)
-        match = pattern.search(text)
+        if term.lower() in AMBIGUOUS_SKILL_TERMS:
+            # Require tech-shaped mention: REST API, REST/HTTP, or all-caps REST token.
+            if term.lower() == "rest":
+                match = re.search(r"\bREST(?:\s*API|\s*/\s*HTTP|\b(?=[^a-z]|$))", text)
+            elif term.lower() == "go":
+                match = re.search(r"\b(?:Golang|Go(?:lang)?)\b", text)
+                if match and match.group(0).lower() == "go":
+                    # bare "go" is too noisy; require Golang or GO in skills lists
+                    if not re.search(r"\bGolang\b|\bGO\b", text):
+                        continue
+            else:
+                match = re.search(rf"(?<![A-Za-z0-9+.#]){re.escape(term)}(?![A-Za-z0-9+.#])", text)
+        else:
+            pattern = re.compile(rf"(?<![A-Za-z0-9+.#]){re.escape(term)}(?![A-Za-z0-9+.#])", re.I)
+            match = pattern.search(text)
         if not match:
             continue
         canon = canonical_skill(term)

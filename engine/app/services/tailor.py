@@ -276,11 +276,16 @@ def _rewrite_skills(
     corpus = _blob(resume)
     selected: list[str] = []
     for skill in analysis.required_skills + analysis.preferred_skills:
-        if skill_owned(skill, owned, corpus):
-            surface = analysis.surface_forms.get(skill) or surface_for(skill, analysis.language)
-            if surface not in selected:
-                selected.append(surface)
-                fact_map.setdefault("skills", []).append(skill)
+        if not skill_owned(skill, owned, corpus):
+            continue
+        surface = analysis.surface_forms.get(skill) or surface_for(skill, analysis.language)
+        # Only inject skill tokens that already appear in the master corpus
+        # (soft-skill proxies may count for matching without inventing new words).
+        if not _token_evidenced_in_corpus(skill, surface, corpus):
+            continue
+        if surface not in selected:
+            selected.append(surface)
+            fact_map.setdefault("skills", []).append(skill)
 
     # Grounded short JD keywords already present in the resume text
     for keyword in analysis.keywords:
@@ -330,6 +335,16 @@ def _rewrite_skills(
             )
 
 
+def _token_evidenced_in_corpus(skill: str, surface: str, corpus: str) -> bool:
+    corpus_l = corpus.lower()
+    if surface.lower() in corpus_l:
+        return True
+    for alias in _aliases_for(skill):
+        if len(alias) >= 3 and alias.lower() in corpus_l:
+            return True
+    return False
+
+
 def _weave_owned_skills_into_highlights(
     resume: Resume,
     analysis: JobAnalysis,
@@ -339,11 +354,18 @@ def _weave_owned_skills_into_highlights(
     """Prefix top bullets with owned JD skill surfaces when missing (no new claims)."""
     owned = {t.lower() for t in tools_set(facts)}
     corpus = _blob(resume)
-    surfaces = [
-        analysis.surface_forms.get(skill) or surface_for(skill, analysis.language)
-        for skill in analysis.required_skills + analysis.preferred_skills
-        if skill_owned(skill, owned, corpus)
-    ]
+    surfaces = []
+    for skill in analysis.required_skills + analysis.preferred_skills:
+        if not skill_owned(skill, owned, corpus):
+            continue
+        surface = analysis.surface_forms.get(skill) or surface_for(skill, analysis.language)
+        if not _token_evidenced_in_corpus(skill, surface, corpus):
+            # Prefer an alias that already exists in the corpus.
+            evidenced = next((a for a in _aliases_for(skill) if a.lower() in corpus.lower()), None)
+            if not evidenced:
+                continue
+            surface = evidenced
+        surfaces.append(surface)
     if not surfaces or not resume.work:
         return
     changed = 0
@@ -353,7 +375,6 @@ def _weave_owned_skills_into_highlights(
             missing = [s for s in surfaces if s.lower() not in lower][:2]
             if not missing:
                 continue
-            # Only weave if the bullet already discusses delivery (keep grounded).
             if len(highlight) < 28:
                 continue
             prefix = ", ".join(missing)
@@ -386,14 +407,33 @@ def _rewrite_summary(
     owned = {t.lower() for t in tools_set(facts)}
     corpus = _blob(resume)
     skill_limit = 10 if dense else 6
-    owned_required = [
-        analysis.surface_forms.get(skill) or surface_for(skill, analysis.language)
-        for skill in analysis.required_skills + analysis.preferred_skills
-        if skill_owned(skill, owned, corpus)
-    ][:skill_limit]
+    owned_required = []
+    for skill in analysis.required_skills + analysis.preferred_skills:
+        if not skill_owned(skill, owned, corpus):
+            continue
+        surface = analysis.surface_forms.get(skill) or surface_for(skill, analysis.language)
+        if not _token_evidenced_in_corpus(skill, surface, corpus):
+            evidenced = next((a for a in _aliases_for(skill) if a.lower() in corpus.lower()), None)
+            if not evidenced:
+                continue
+            surface = evidenced
+        owned_required.append(surface)
+    owned_required = owned_required[:skill_limit]
     # Dedupe while preserving order
     seen: set[str] = set()
     owned_required = [s for s in owned_required if not (s.lower() in seen or seen.add(s.lower()))]
+
+    # Distinctive JD phrases already evidenced in the resume (domain lift).
+    domain_bits: list[str] = []
+    corpus_l = corpus.lower()
+    for kw in analysis.keywords:
+        token = kw.strip()
+        if len(token) < 5 or " " not in token:
+            continue
+        if token.lower() in corpus_l and token.lower() not in {s.lower() for s in owned_required}:
+            domain_bits.append(token)
+        if len(domain_bits) >= 4:
+            break
 
     candidates: list[str] = []
     if resume.basics.summary:
@@ -401,22 +441,31 @@ def _rewrite_summary(
     for work in resume.work:
         if work.summary:
             candidates.append(work.summary)
-        candidates.extend(work.highlights[:3])
-    query = " ".join([analysis.title, *analysis.required_skills, *analysis.keywords[:8]])
-    evidence = extractive_summary(candidates, query, limit=4 if dense else 3)
+        candidates.extend(work.highlights[:4])
+    query = " ".join(
+        [analysis.title, *analysis.required_skills, *analysis.preferred_skills, *analysis.keywords[:10]]
+    )
+    evidence = extractive_summary(candidates, query, limit=5 if dense else 3)
 
     role = analysis.title or resume.basics.label or ("Professional" if analysis.language == "en" else "Profesyonel")
     skill_clause = ", ".join(owned_required)
+    domain_clause = ", ".join(domain_bits)
     if analysis.language == "tr":
         opener = f"{role}."
         if skill_clause:
             opener += f" Doğrudan ilgili yetkinlikler: {skill_clause}."
+        if domain_clause:
+            opener += f" İlanla örtüşen odak: {domain_clause}."
     else:
         if skill_clause:
             opener = f"{role} with proven depth in {skill_clause}."
         else:
             opener = f"{role} with relevant, verifiable delivery against the posting."
+        if domain_clause:
+            opener += f" Domain focus aligned to {domain_clause}."
     summary = " ".join(p for p in [opener, evidence] if p).strip()
+    # Avoid accidental duplication from prior dense passes
+    summary = re.sub(r"(\b\S.{10,80}?\.)(?:\s+\1)+", r"\1", summary)
     if summary and summary != resume.basics.summary:
         diffs.append(
             DiffChange(
@@ -427,7 +476,7 @@ def _rewrite_summary(
             )
         )
         resume.basics.summary = summary
-        fact_map["basics.summary"] = ["summary"] + owned_required
+        fact_map["basics.summary"] = ["summary"] + owned_required + domain_bits
 
 
 def _split_keep(text: str) -> list[str]:
