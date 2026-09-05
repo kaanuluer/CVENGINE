@@ -1,0 +1,86 @@
+{
+  "basics": {
+    "name": "Ada Meridian",
+    "label": "Software Engineer",
+    "email": "ada.meridian@example.com",
+    "phone": "+1 415 555 0199",
+    "url": "https://linkedin.com/in/adameridian",
+    "summary": "Software engineer with 6 years building backend APIs and data pipelines in Python and PostgreSQL. Reduced p95 latency 40% on a payments API and led a 4-person squad.",
+    "location": { "city": "San Francisco", "region": "CA", "countryCode": "US" },
+    "profiles": []
+  },
+  "work": [
+    {
+      "name": "Northwind Labs",
+      "position": "Software Engineer",
+      "startDate": "2021-03",
+      "endDate": "",
+      "summary": "Backend platform for payments.",
+      "highlights": [
+        "Built FastAPI services on PostgreSQL that processed 2M payments per month with 99.95% uptime.",
+        "Cut p95 API latency 40% by adding Redis caching and query indexes.",
+        "Led a 4-person squad to migrate monolith jobs onto Docker and GitHub Actions CI/CD.",
+        "Wrote pytest coverage from 41% to 82% and introduced on-call runbooks."
+      ],
+      "url": "",
+      "location": "San Francisco"
+    },
+    {
+      "name": "Helios Analytics",
+      "position": "Junior Software Engineer",
+      "startDate": "2018-07",
+      "endDate": "2021-02",
+      "summary": "Data tooling.",
+      "highlights": [
+        "Shipped Python ETL jobs that loaded 50GB/day into PostgreSQL for analyst dashboards.",
+        "Implemented REST endpoints in Django for internal reporting used by 30 analysts.",
+        "Automated weekly Excel exports, saving 8 hours of manual work each week."
+      ],
+      "url": "",
+      "location": "Austin"
+    }
+  ],
+  "education": [
+    {
+      "institution": "University of Texas",
+      "area": "Computer Science",
+      "studyType": "B.S.",
+      "startDate": "2014-09",
+      "endDate": "2018-05",
+      "score": "",
+      "url": "",
+      "courses": []
+    }
+  ],
+  "skills": [
+    {
+      "name": "Languages",
+      "level": "",
+      "keywords": ["Python", "SQL", "TypeScript", "JavaScript"]
+    },
+    {
+      "name": "Infrastructure",
+      "level": "",
+      "keywords": ["PostgreSQL", "Redis", "Docker", "AWS", "Git"]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Invoice Parser",
+      "description": "Local PDF invoice extractor.",
+      "highlights": ["Parsed 10k invoices with pdfminer and FastAPI, 97% field accuracy."],
+      "startDate": "",
+      "endDate": "",
+      "url": "",
+      "keywords": ["Python", "pdfminer"]
+    }
+  ],
+  "certificates": [],
+  "languages": [{ "language": "English", "fluency": "Native" }],
+  "volunteer": [],
+  "awards": [],
+  "publications": [],
+  "interests": [],
+  "references": [],
+  "meta": {}
+}

@@ -1,0 +1,15 @@
+Kıdemli Backend Mühendisi
+
+Mavi Finans için FastAPI, PostgreSQL ve Docker deneyimi olan bir Kıdemli Backend Mühendisi arıyoruz.
+
+Zorunlu
+- Python
+- PostgreSQL
+- REST API
+- Docker
+- CI/CD
+- Redis
+
+Tercihen
+- AWS
+- Kubernetes

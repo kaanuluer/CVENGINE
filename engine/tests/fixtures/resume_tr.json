@@ -1,0 +1,60 @@
+{
+  "basics": {
+    "name": "Ece Kaya",
+    "label": "Yazılım Mühendisi",
+    "email": "ece.kaya@example.com",
+    "phone": "+90 532 000 00 00",
+    "url": "https://linkedin.com/in/ecekaya",
+    "summary": "Python ve PostgreSQL ile 5 yıldır backend sistemleri geliştiren yazılım mühendisi. API gecikmesini %35 düşürdü, Docker tabanlı CI/CD kurdu.",
+    "location": { "city": "İstanbul", "region": "İstanbul", "countryCode": "TR" },
+    "profiles": []
+  },
+  "work": [
+    {
+      "name": "Mavi Yazılım",
+      "position": "Yazılım Mühendisi",
+      "startDate": "2020-01",
+      "endDate": "",
+      "summary": "Fintech API ekibi.",
+      "highlights": [
+        "FastAPI ve PostgreSQL ile aylık 800 bin işlemi karşılayan ödeme servisi geliştirdim.",
+        "Redis önbellekle p95 gecikmeyi %35 azalttım.",
+        "GitHub Actions ve Docker ile CI/CD kurarak yayın süresini 2 günden 45 dakikaya indirdim.",
+        "pytest kapsamını %38'den %79'a çıkardım."
+      ],
+      "url": "",
+      "location": "İstanbul"
+    }
+  ],
+  "education": [
+    {
+      "institution": "Boğaziçi Üniversitesi",
+      "area": "Bilgisayar Mühendisliği",
+      "studyType": "Lisans",
+      "startDate": "2014-09",
+      "endDate": "2019-06",
+      "score": "",
+      "url": "",
+      "courses": []
+    }
+  ],
+  "skills": [
+    {
+      "name": "Teknik",
+      "level": "",
+      "keywords": ["Python", "PostgreSQL", "FastAPI", "Docker", "Redis", "Git"]
+    }
+  ],
+  "projects": [],
+  "certificates": [],
+  "languages": [
+    { "language": "Türkçe", "fluency": "Ana dil" },
+    { "language": "İngilizce", "fluency": "İleri" }
+  ],
+  "volunteer": [],
+  "awards": [],
+  "publications": [],
+  "interests": [],
+  "references": [],
+  "meta": {}
+}
